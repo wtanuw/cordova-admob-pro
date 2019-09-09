@@ -102,6 +102,10 @@
             <string>$ADMOB_APP_ID</string>
         </config-file>
 
+        <config-file target="*-Info.plist" parent="GADIsAdManagerApp">
+            <true/>
+        </config-file>
+        
         <header-file src="src/ios/CDVAdMobPlugin.h"/>
         <source-file src="src/ios/CDVAdMobPlugin.m"/>
         <header-file src="src/ios/AdMobMediation.h"/>

@@ -35,7 +35,7 @@
 #define OPT_CUSTOMTARGETING @"customTargeting"
 #define OPT_EXCLUDE         @"exclude"
 
-@interface CDVAdMobPlugin()<GADBannerViewDelegate, GADInterstitialDelegate, GADRewardBasedVideoAdDelegate>
+@interface CDVAdMobPlugin()<GADBannerViewDelegate, GADInterstitialDelegate, GADRewardBasedVideoAdDelegate, GADRewardedAdDelegate>
 
 @property (assign) GADAdSize adSize;
 @property (nonatomic, retain) NSDictionary* adExtras;
@@ -50,6 +50,7 @@
 @property (nonatomic, retain) NSArray* mExclude;
 
 @property (nonatomic, retain) NSString* rewardVideoAdId;
+@property (nonatomic, retain) GADRewardedAd* rewardedAd;
 
 - (GADAdSize)__AdSizeFromString:(NSString *)str;
 - (GADRequest*) __buildAdRequest:(BOOL)forBanner forDFP:(BOOL)fordfp;
@@ -70,10 +71,10 @@
     self.mLocation = nil;
     self.mForChild = nil;
     self.mContentURL = nil;
-
+    
     self.mCustomTargeting = nil;
     self.mExclude = nil;
-
+    
     self.rewardVideoAdId = nil;
 }
 
@@ -86,7 +87,7 @@
     return TEST_INTERSTITIALID;
 }
 - (NSString*) __getTestRewardVideoId {
-  return TEST_REWARDVIDEOID;
+    return TEST_REWARDVIDEOID;
 }
 
 - (void) parseOptions:(NSDictionary *)options
@@ -133,10 +134,10 @@
     if(GADAdSizeEqualToSize(self.adSize, kGADAdSizeInvalid)) {
         self.adSize = [self __isLandscape] ? kGADAdSizeSmartBannerLandscape : kGADAdSizeSmartBannerPortrait;
     }
-
+    
     // safety check to avoid crash if adId is empty
     if(adId==nil || [adId length]==0) adId = TEST_BANNER_ID;
-
+    
     GADBannerView* ad = nil;
     if(* [adId UTF8String] == '/') {
         ad = [[DFPBannerView alloc] initWithAdSize:self.adSize];
@@ -147,14 +148,14 @@
     ad.rootViewController = [self getViewController];
     ad.delegate = self;
     ad.adUnitID = adId;
-
+    
     return ad;
 }
 
 - (GADRequest*) __buildAdRequest:(BOOL)forBanner forDFP:(BOOL)fordfp
 {
     GADRequest *request = nil;
-
+    
     if(fordfp) {
         DFPRequest * req = [DFPRequest request];
         if(self.mCustomTargeting) {
@@ -164,7 +165,7 @@
             req.categoryExclusions = self.mExclude;
         }
         request = req;
-
+        
     } else {
         request = [GADRequest request];
     }
@@ -251,7 +252,7 @@
             ad.adSize = kGADAdSizeSmartBannerPortrait;
         }
     }
-
+    
     [super __showBanner:position atX:x atY:y];
 }
 
@@ -269,7 +270,7 @@
     if([view class] == [DFPBannerView class]) {
         DFPBannerView* ad = (DFPBannerView*) view;
         [ad loadRequest:[self __buildAdRequest:true forDFP:true]];
-
+        
     } else if([view class] == [GADBannerView class]) {
         GADBannerView* ad = (GADBannerView*) view;
         [ad loadRequest:[self __buildAdRequest:true forDFP:false]];
@@ -299,7 +300,7 @@
     self.interstitialReady = false;
     // safety check to avoid crash if adId is empty
     if(adId==nil || [adId length]==0) adId = TEST_INTERSTITIALID;
-
+    
     GADInterstitial* ad = nil;
     if(* [adId UTF8String] == '/') {
         ad = [[DFPInterstitial alloc] initWithAdUnitID:adId];
@@ -314,7 +315,7 @@
     if([interstitial class] == [DFPInterstitial class]) {
         DFPInterstitial* ad = (DFPInterstitial*) interstitial;
         [ad loadRequest:[self __buildAdRequest:true forDFP:true]];
-
+        
     } else if([interstitial class] == [GADInterstitial class]) {
         GADInterstitial* ad = (GADInterstitial*) interstitial;
         if(ad) {
@@ -337,19 +338,59 @@
     }
 }
 
+#define USE_GADREWARDEDAD_BETA 1
+
 - (NSObject*) __prepareRewardVideoAd:(NSString*)adId {
-    [GADRewardBasedVideoAd sharedInstance].delegate = self;
-    [[GADRewardBasedVideoAd sharedInstance] loadRequest:[GADRequest request]
-                                           withAdUnitID:adId];
+    if (USE_GADREWARDEDAD_BETA) {
+        self.rewardVideoAdId = adId;
+        self.rewardedAd = [[GADRewardedAd alloc] initWithAdUnitID:adId];
+        DFPRequest *request = [DFPRequest request];
+        NSString* deviceId = [self __getAdMobDeviceId];
+        request.testDevices = [NSArray arrayWithObjects:deviceId, kGADSimulatorID, nil];
+        [self.rewardedAd loadRequest:request completionHandler:^(GADRequestError * _Nullable error) {
+            if (error) {
+                // Handle ad failed to load case.
+            } else {
+                // Ad successfully loaded.
+            }
+        }];
+    } else {
+        [GADRewardBasedVideoAd sharedInstance].delegate = self;
+        [[GADRewardBasedVideoAd sharedInstance] loadRequest:[GADRequest request]
+                                               withAdUnitID:adId];
+    }
     return nil;
 }
 
 - (BOOL) __showRewardVideoAd:(NSObject*)rewardvideo {
-    if ([[GADRewardBasedVideoAd sharedInstance] isReady]) {
-        [[GADRewardBasedVideoAd sharedInstance] presentFromRootViewController:[self getViewController]];
-        return true;
+    if (USE_GADREWARDEDAD_BETA) {
+        if (self.rewardedAd.isReady) {
+            [self.rewardedAd presentFromRootViewController:[self getViewController] delegate:self];
+            return true;
+        } else {
+            NSString *adId = self.rewardVideoAdId;
+            self.rewardedAd = [[GADRewardedAd alloc] initWithAdUnitID:adId];
+            DFPRequest *request = [DFPRequest request];
+            NSString* deviceId = [self __getAdMobDeviceId];
+            request.testDevices = [NSArray arrayWithObjects:deviceId, kGADSimulatorID, nil];
+            [self.rewardedAd loadRequest:request completionHandler:^(GADRequestError * _Nullable error) {
+                if (error) {
+                    // Handle ad failed to load case.
+                } else {
+                    // Ad successfully loaded.
+                    [self.rewardedAd presentFromRootViewController:[self getViewController] delegate:self];
+                }
+            }];
+            return false;
+        }
+
+    } else {
+        if ([[GADRewardBasedVideoAd sharedInstance] isReady]) {
+            [[GADRewardBasedVideoAd sharedInstance] presentFromRootViewController:[self getViewController]];
+            return true;
+        }
+        return false;
     }
-    return false;
 }
 
 #pragma mark GADBannerViewDelegate implementation
@@ -465,6 +506,37 @@
 - (void)rewardBasedVideoAd:(GADRewardBasedVideoAd *)rewardBasedVideoAd
     didFailToLoadWithError:(NSError *)error {
     [self fireAdErrorEvent:EVENT_AD_FAILLOAD withCode:(int)error.code withMsg:[error localizedDescription] withType:ADTYPE_REWARDVIDEO];
+}
+
+#pragma mark GADRewardAdDelegate
+
+/// Tells the delegate that the user earned a reward.
+- (void)rewardedAd:(nonnull GADRewardedAd *)rewardedAd
+ userDidEarnReward:(nonnull GADAdReward *)reward
+{
+    NSString* obj = [self __getProductShortName];
+    NSString* json = [NSString stringWithFormat:@"{'adNetwork':'%@','adType':'%@','adEvent':'%@','rewardType':'%@','rewardAmount':%lf}",
+                      obj, ADTYPE_REWARDVIDEO, EVENT_AD_PRESENT, reward.type, [reward.amount doubleValue]];
+    [self fireEvent:obj event:EVENT_AD_PRESENT withData:json];
+}
+
+/// Tells the delegate that the rewarded ad failed to present.
+- (void)rewardedAd:(nonnull GADRewardedAd *)rewardedAd
+didFailToPresentWithError:(nonnull NSError *)error
+{
+    [self fireAdErrorEvent:EVENT_AD_FAILLOAD withCode:(int)error.code withMsg:[error localizedDescription] withType:ADTYPE_REWARDVIDEO];
+}
+
+/// Tells the delegate that the rewarded ad was presented.
+- (void)rewardedAdDidPresent:(nonnull GADRewardedAd *)rewardedAd
+{
+    [self fireAdEvent:EVENT_AD_WILLPRESENT withType:ADTYPE_REWARDVIDEO];
+}
+
+/// Tells the delegate that the rewarded ad was dismissed.
+- (void)rewardedAdDidDismiss:(nonnull GADRewardedAd *)rewardedAd
+{
+    [self fireAdEvent:EVENT_AD_DISMISS withType:ADTYPE_REWARDVIDEO];
 }
 
 @end
