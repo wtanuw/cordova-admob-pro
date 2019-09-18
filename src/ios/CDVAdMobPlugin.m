@@ -340,7 +340,20 @@
 
 #define USE_GADREWARDEDAD_BETA 1
 
-- (NSObject*) __prepareRewardVideoAd:(NSString*)adId {
+- (void) prepareRewardVideoAd:(CDVInvokedUrlCommand*) command {
+    if (USE_GADREWARDEDAD_BETA) {
+        id args = [command argumentAtIndex:0];
+        id adId = args[OPT_ADID];
+        BOOL isTesting = [args[OPT_IS_TESTING] boolValue];
+        BOOL autoShow = [args[OPT_AUTO_SHOW] boolValue];
+        [self __prepareRewardVideoAd:adId isTesting:isTesting autoShow:autoShow];
+    }
+}
+        
+- (NSObject*) __prepareRewardVideoAd:(NSString*)adId isTesting:(BOOL)isTesting autoShow:(BOOL)autoShow {
+    if(adId==nil || [adId length]==0) adId = TEST_REWARDVIDEOID;
+    if(isTesting) adId = TEST_REWARDVIDEOID;
+    
     if (USE_GADREWARDEDAD_BETA) {
         self.rewardVideoAdId = adId;
         self.rewardedAd = [[GADRewardedAd alloc] initWithAdUnitID:adId];
@@ -349,9 +362,13 @@
         request.testDevices = [NSArray arrayWithObjects:deviceId, kGADSimulatorID, nil];
         [self.rewardedAd loadRequest:request completionHandler:^(GADRequestError * _Nullable error) {
             if (error) {
+                NSLog(@"%@",error.localizedDescription);
                 // Handle ad failed to load case.
             } else {
                 // Ad successfully loaded.
+                if (autoShow) {
+                    [self.rewardedAd presentFromRootViewController:[self getViewController] delegate:self];
+                }
             }
         }];
     } else {
@@ -376,6 +393,7 @@
             [self.rewardedAd loadRequest:request completionHandler:^(GADRequestError * _Nullable error) {
                 if (error) {
                     // Handle ad failed to load case.
+                    [self fireAdErrorEvent:EVENT_AD_FAILLOAD withCode:(int)error.code withMsg:[error localizedDescription] withType:ADTYPE_REWARDVIDEO];
                 } else {
                     // Ad successfully loaded.
                     [self.rewardedAd presentFromRootViewController:[self getViewController] delegate:self];
@@ -383,7 +401,7 @@
             }];
             return false;
         }
-
+        
     } else {
         if ([[GADRewardBasedVideoAd sharedInstance] isReady]) {
             [[GADRewardBasedVideoAd sharedInstance] presentFromRootViewController:[self getViewController]];
